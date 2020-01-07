@@ -1,0 +1,17 @@
+identifier: wort_swarm_node_hardware
+name: wort_swarm_node_hardware
+type: mcu
+arch: arm
+toolchain:
+  - zephyr
+  - gnuarmemb
+  - xtools
+supported:
+  - adc
+  - usb_device
+  - usb_cdc
+  - ble
+  - ieee802154
+  - pwm
+  - watchdog
+  - counter

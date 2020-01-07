@@ -1,0 +1,5 @@
+# Kconfig - wort_swarm_node_hardware board configuration
+
+config  BOARD_WORT_SWARM_NODE_HARDWARE
+	bool "wort_swarm_node_hardware"
+	depends on SOC_NRF52840_QIAA
