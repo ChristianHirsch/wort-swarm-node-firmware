@@ -1,0 +1,11 @@
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+description: |
+    This is a representation of the SI-705X digital temperature sensor
+    
+compatible: "silabs,si705x"
+
+include: i2c-device.yaml
+

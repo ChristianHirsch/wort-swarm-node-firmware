@@ -35,7 +35,7 @@ static int pm_state;
  * In actual Application this decision can be made using time (ticks)
  * And RTC timer can be programmed to wake the device after time elapsed.
  */
-static int pm_policy_get_state(s32_t ticks)
+static int pm_policy_get_state(int32_t ticks)
 {
 	/*
 	 * Power Management Policy:
@@ -102,7 +102,7 @@ static int low_power_suspend_entry(void)
  * Description: All request from Idle thread to Enter into
  * Low Power Mode or Deep Sleep State land in this function
  */
-int sys_suspend(s32_t ticks)
+int sys_suspend(int32_t ticks)
 {
 	int ret = SYS_PM_NOT_HANDLED;
 

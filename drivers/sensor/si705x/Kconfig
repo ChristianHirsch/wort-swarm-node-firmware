@@ -1,0 +1,12 @@
+# Kconfig.SI705X - SI705X SI-705X I2C-based temperature sensor
+# SPDX-License-Identifier: Apache-2.0
+
+menuconfig SI705X
+	bool "SI705X sensor"
+	depends on I2C
+	help
+	  Enable driver for SI705X I2C-based temperature sensor.
+
+if SI705X
+
+endif # SI705X

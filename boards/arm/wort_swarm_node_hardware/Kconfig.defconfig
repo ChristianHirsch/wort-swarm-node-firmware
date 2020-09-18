@@ -5,13 +5,6 @@ if BOARD_WORT_SWARM_NODE_HARDWARE
 config BOARD
 	default "wort_swarm_node_hardware"
 
-if ADC
-
-config ADC_0
-	default y
-
-endif # ADC
-
 if I2C
 
 config I2C_0
@@ -19,22 +12,22 @@ config I2C_0
 
 endif # I2C
 
-if PWM
+#if PWM
 
-config PWM_0
-	default y
+#config PWM_0
+#	default y
 
-endif # PWM
+#endif # PWM
 
-if SPI
+#if SPI
 
-config SPI_1
-	default y
+#config SPI_1
+#	default y
 
-config SPI_2
-	default y
+#config SPI_2
+#	default y
 
-endif # SPI
+#endif # SPI
 
 if USB
 

@@ -1,16 +1,9 @@
-/* main.c - Application main entry point */
-
-/*
- *
- */
+/* main.c - Application main for soil-swarm-node */
 
 #include <zephyr.h>
 #include <zephyr/types.h>
-#include <misc/byteorder.h>
 #include <logging/log.h>
 #include <settings/settings.h>
-#include <device.h>
-#include <gpio.h>
 #include <soc.h>
 
 #include <stddef.h>
@@ -23,112 +16,73 @@
 #include <bluetooth/uuid.h>
 #include <bluetooth/gatt.h>
 
-#include "bas.h"
-#include "cts.h"
-#include "battery.h"
+//		BT_LE_ADV_OPT_USE_NAME |     /* adv name */            \
 
-#include "settings.h"
-
-#include <nrfx/hal/nrf_radio.h>
-
-#include <drivers/sensor.h>
-
-#include <drivers/pwm.h>
-
-#if defined(DT_ALIAS_PWM_LED0_PWMS_CONTROLLER) && defined(DT_ALIAS_PWM_LED0_PWMS_CHANNEL)
-/* get the defines from dt (based on alias 'pwm-led0') */
-#define PWM_DRIVER	DT_ALIAS_PWM_LED0_PWMS_CONTROLLER
-#define PWM_CHANNEL	DT_ALIAS_PWM_LED0_PWMS_CHANNEL
-#else
-#error "Choose supported PWM driver"
-#endif
-
-#define LED_PORT	DT_ALIAS_LED0_GPIOS_CONTROLLER
-#define LED			DT_ALIAS_LED0_GPIOS_PIN
-
-#ifndef IBEACON_RSSI
-#define IBEACON_RSSI 0xc8
-#endif
-
-#define SENSE_INTERVAL 5
-#define MEASUREMENTS_SIZE  10
-
-/* in microseconds */
-#define MIN_PERIOD	(USEC_PER_SEC / 64U)
-
-/* in microseconds */
-#define MAX_PERIOD	USEC_PER_SEC
+#define BT_LE_ADV_CONN_NAME_ID_CODED BT_LE_ADV_PARAM( \
+		BT_LE_ADV_OPT_CONNECTABLE |  /* connectable */         \
+		BT_LE_ADV_OPT_USE_IDENTITY | /* use identity */        \
+		BT_LE_ADV_OPT_EXT_ADV | /* use extended advertising */ \
+		BT_LE_ADV_OPT_CODED,    /* advertise coded phy */      \
+		BT_GAP_ADV_SLOW_INT_MIN, \
+		BT_GAP_ADV_SLOW_INT_MAX, NULL)
 
 #define BT_LE_ADV_CONN_NAME_ID BT_LE_ADV_PARAM(BT_LE_ADV_OPT_CONNECTABLE | \
-                         BT_LE_ADV_OPT_USE_NAME | BT_LE_ADV_OPT_USE_IDENTITY, \
-                         BT_GAP_ADV_SLOW_INT_MIN, \
-                         BT_GAP_ADV_SLOW_INT_MAX)
+		BT_LE_ADV_OPT_USE_NAME | BT_LE_ADV_OPT_USE_IDENTITY, \
+		BT_GAP_ADV_SLOW_INT_MIN, \
+		BT_GAP_ADV_SLOW_INT_MAX, NULL)
 
 // BT_GAP_ADV_SLOW_INT_MIN = 0x0640 ^= 1s
 // BT_GAP_ADV_SLOW_INT_MAX = 0x0780 ^= 1.2s
 #define BT_LE_ADV_NCONN_NAME_ID BT_LE_ADV_PARAM(BT_LE_ADV_OPT_USE_NAME | \
-						 BT_LE_ADV_OPT_USE_IDENTITY, \
-                         BT_GAP_ADV_SLOW_INT_MIN, \
-                         BT_GAP_ADV_SLOW_INT_MAX)
+		BT_LE_ADV_OPT_USE_IDENTITY, \
+		BT_GAP_ADV_SLOW_INT_MIN, \
+		BT_GAP_ADV_SLOW_INT_MAX, NULL)
 
 LOG_MODULE_REGISTER(main);
 
-void create_device_list(void);
+K_THREAD_STACK_DEFINE(disconnect_timeout_stack, 32);
+struct k_thread disconnect_timeout_data;
+k_tid_t disconnect_timeout_tid;
 
-struct {
-	u32_t timestamp;
-	u16_t battery;
-} measurements[MEASUREMENTS_SIZE];
+void disconnect_timeout(void *, void *, void *);
 
-s16_t buf_start = 0;
-s16_t buf_end   = 0;
-u32_t sense_interval_mult = 1;
+extern volatile struct time_sync remote_ts;
 
 static bool is_client_connected  = false;
-bool is_sync_enabled = false;
+struct bt_conn *client_connected = 0;
+u32_t time_connected = 0;
 
-extern u8_t cts_notify_enabled;
+u16_t num_connected = 0;
 
-//struct bt_le_adv_param *adv_params_conn = BT_LE_ADV_CONN_NAME_ID;
-//struct bt_le_adv_param *adv_params_nconn = BT_LE_ADV_NCONN_NAME_ID;
 struct bt_le_adv_param *adv_params = BT_LE_ADV_CONN_NAME_ID;
 
-enum {
-	NO_DATA_AVAILABLE = 0,
-	DATA_AVAILABLE = BIT(0)
-};
-
-/*
- * Set iBeacon demo advertisement data. These values are for
- * demonstration only and must be changed for production environments!
- *
- * UUID:  ec60de83-4b7e-4c75-96c9-2f4e76617a7e
- * Major: 102
- * Minor[1]: Status Flags
- * Minor[0]: SW Version
- * RSSI:  -56 dBm
- */
 static const struct bt_data ad[] = {
-        BT_DATA_BYTES(BT_DATA_FLAGS, BT_LE_AD_NO_BREDR),
-        BT_DATA_BYTES(BT_DATA_MANUFACTURER_DATA,
-                      0x4c, 0x00, /* Apple */
-                      0x02, 0x15, /* iBeacon */
-                      0xec, 0x60, 0xde, 0x83, /* UUID[15..12] */
-                      0x4b, 0x7e, /* UUID[11..10] */
-                      0x4c, 0x75, /* UUID[9..8] */
-                      0x96, 0xc9, /* UUID[7..6] */
-                      0x2f, 0x4e, 0x76, 0x61, 0x7a, 0x7e, /* UUID[5..0] */
-                      0x00, 0x66, /* Major */
-                      0x00, 0x66, /* Minor */
-                      IBEACON_RSSI) /* Calibrated RSSI @ 1m */
+		BT_DATA_BYTES(BT_DATA_FLAGS, BT_LE_AD_NO_BREDR),
+		BT_DATA_BYTES(BT_DATA_UUID16_ALL, 0xaa, 0xfe),
+		BT_DATA_BYTES(BT_DATA_SVC_DATA16,
+				0xaa, 0xfe, /* Eddystone UUID */
+				0x10, /* Eddystone-URL frame type */
+				0x04, /* Calibrated Tx power at 0m */
+				0x00, /* URL Scheme Prefix http://www. */
+				//'a','f','a','r','c','l','o','u','d','.','e','u','/')
+				'a','f','a','r','c','l','o','u','d','.','a','t','/')
 };
 
-void set_beacon_flags(u8_t flags) {
-	*((u8_t *)(ad[1].data + 22)) = flags;
-}
+void start_advertising() {
+	int err = 0, err_cnt = 0;
+	do {
+		err = bt_le_adv_start(adv_params, ad, ARRAY_SIZE(ad), NULL, 0);
+		if(err == 0 || err_cnt > 3)
+			break;
+		err_cnt++;
+		k_sleep(K_MSEC(15));
+	} while(err);
 
-u8_t get_beacon_flags(void) {
-	return *(ad[1].data + 22);
+	if (err) {
+		LOG_ERR("Advertising failed to start (err %d)", err);
+		return;
+	}
+	LOG_INF("Advertising successfully started");
 }
 
 static void connected(struct bt_conn *conn, u8_t err)
@@ -138,27 +92,43 @@ static void connected(struct bt_conn *conn, u8_t err)
 		return;
 	}
 
+	client_connected = conn;
 	is_client_connected = true;
-	bt_le_adv_stop();
-	LOG_INF("Connected\n");
+
+	disconnect_timeout_tid = k_thread_create(&disconnect_timeout_data,
+			disconnect_timeout_stack,
+			K_THREAD_STACK_SIZEOF(disconnect_timeout_stack),
+			disconnect_timeout,
+			NULL, NULL, NULL, 1, 0, K_MINUTES(5));
+	num_connected++;
+
+	LOG_INF("Connected (%u times)", num_connected);
+}
+
+static void bt_ready(int err)
+{
+	if (err) {
+		LOG_ERR("Bluetooth init failed (err %d)", err);
+		return;
+	}
+	LOG_INF("Bluetooth initialized");
+
+	if (IS_ENABLED(CONFIG_SETTINGS)) {
+		settings_load();
+	}
+
+	start_advertising();
 }
 
 static void disconnected(struct bt_conn *conn, u8_t reason)
 {
 	LOG_INF("Disconnected (reason %u)\n", reason);
 	is_client_connected = false;
-	cts_notify_enabled = 0;
 
-	//adv_params = adv_params_nconn;
-	if (buf_start == buf_end) {
-		set_beacon_flags(NO_DATA_AVAILABLE);
+	if (disconnect_timeout_tid)
+	{
+		k_wakeup(disconnect_timeout_tid);
 	}
-	int err = bt_le_adv_start(adv_params, ad, ARRAY_SIZE(ad), NULL, 0);
-	if (err) {
-		LOG_ERR("Advertising failed to start (err %d)", err);
-		return;
-	}
-    LOG_INF("Advertising successfully started");
 }
 
 static struct bt_conn_cb conn_callbacks = {
@@ -166,24 +136,15 @@ static struct bt_conn_cb conn_callbacks = {
 	.disconnected = disconnected,
 };
 
-static void bt_ready(int err)
+void disconnect_timeout(void *v1, void *v2, void *v3)
 {
-	if (err) {
-		return;
+	/* if connection is still up after 15min, (auto-)disconnect */
+	if (is_client_connected == true)
+	{
+		bt_conn_disconnect(client_connected, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
 	}
 
-	// cts_init();
-
-	if (IS_ENABLED(CONFIG_SETTINGS)) {
-		settings_load();
-	}
-
-	set_beacon_flags(NO_DATA_AVAILABLE);
-	err = bt_le_adv_start(adv_params, ad, ARRAY_SIZE(ad), NULL, 0);
-	if (err) {
-		LOG_ERR("Advertising failed to start (err %d)", err);
-		return;
-	}
+	disconnect_timeout_tid = 0;
 }
 
 void main(void)
@@ -191,57 +152,13 @@ void main(void)
 	int err = 0;
 
 	err = bt_enable(bt_ready);
-	if (err) {
-		//LOG_ERR("Bluetooth init failed (err %d)", err);
-		//return;
+	if (err != 0) {
+		LOG_ERR("Bluetooth init failed (err %d)", err);
+		return;
 	}
-
-    bt_conn_cb_register(&conn_callbacks);
-
-    struct device *adc_dev = device_get_binding(ADC_DEVICE_NAME);
-
-    u32_t entry = k_uptime_get_32();
-    u32_t exit = entry;
-
-	struct device *pwm_dev;
-	u32_t max_period = 20;
-	u32_t period;
-
-	//pwm_dev = device_get_binding(PWM_DRIVER);
-	//if (!pwm_dev) {
-	//	printk("Cannot find %s!\n", PWM_DRIVER);
-	//	return;
-	//}
-	
-	struct device *led_dev = device_get_binding(LED_PORT);
-	/* Set LED pin as output */
-	gpio_pin_configure(led_dev, LED, GPIO_DIR_OUT);
-
-	period = 0;
-	u8_t cnt = 0;
+	bt_conn_cb_register(&conn_callbacks);
 
 	while (1) {
-
-		u32_t time_to_sleep = 100;
-		if (entry < exit) {
-			time_to_sleep -= (exit - entry);
-		}
-		k_sleep(time_to_sleep);
-
-		entry = k_uptime_get_32();
-
-		/*  * /
-		if (pwm_pin_set_usec(pwm_dev, PWM_CHANNEL,
-					max_period, period)) {
-			printk("pwm pin set fails\n");
-			return;
-		}
-		*/
-		gpio_pin_write(led_dev, LED, cnt % 2);
-		cnt++;
-
-		period = (period + 1) % max_period;
-
-        exit = k_uptime_get_32();
+		k_sleep(K_FOREVER);
 	}
 }

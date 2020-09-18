@@ -1,0 +1,16 @@
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+description: |
+    This is a representation of the ICM-20948 Three Axis High-g I2C/SPI accelerometer
+    
+compatible: "tdk,icm20948"
+
+include: spi-device.yaml
+
+properties:
+    int-gpios:
+      type: phandle-array
+      required: false
+      description: |

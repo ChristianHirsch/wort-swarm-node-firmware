@@ -1,0 +1,16 @@
+# Copyright (c) 2020 Christian Hirsch
+# SPDX-License-Identifier: Apache-2.0
+
+config MEASUREMENTS_SIZE
+        int "Number of measurements stored in RAM"
+        default 480
+        range 0 4094
+
+config SENSE_INTERVAL
+        int "Inteval between two measurements in seconds"
+        default 60
+        range 1 4094
+
+source "Kconfig.zephyr"
+rsource "./drivers/sensor/icm20948/Kconfig"
+rsource "./drivers/sensor/si705x/Kconfig"

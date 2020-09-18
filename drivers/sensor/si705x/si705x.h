@@ -1,0 +1,24 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+
+#ifndef ZEPHYR_DRIVERS_SENSOR_SI_705X_H_
+#define ZEPHYR_DRIVERS_SENSOR_SI_705X_H_
+
+#define SI705X_CMD_RESET						0xFE
+#define SI705X_CMD_MEASURE_HOLD_MASTER_MODE		0xE3
+#define SI705X_CMD_MEASURE_NO_HOLD_MASTER_MODE	0xF3
+#define SI705X_CMD_WRITE_USER_REG_1				0xE6
+#define SI705X_CMD_READ_USER_REG_1				0xE7
+#define SI705X_CMD_READ_ID_1ST_BYTE				0xFA,0x0F
+#define SI705X_CMD_READ_ID_2ND_BYTE				0xFC,0xC9
+#define SI705X_CMD_READ_FIRMWARE_REV			0x84,0xB8
+
+struct si705x_data {
+	struct device *i2c;
+
+	uint8_t buf[2];
+};
+
+#endif /* ZEPHYR_DRIVERS_SENSOR_BME280_BME280_H_ */
